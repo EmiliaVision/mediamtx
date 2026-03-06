@@ -1,0 +1,106 @@
+name: riscv64
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Upstream tag to build (e.g. v1.16.3)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: emiliavision/mediamtx
+
+jobs:
+  build-riscv64:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Generate embedded assets
+        run: go generate ./...
+
+      - name: Cross-compile for riscv64
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -o mediamtx .
+          file mediamtx
+          ls -lh mediamtx
+
+      - name: Prepare build context
+        run: |
+          mkdir -p dist
+          cp mediamtx dist/
+          cp mediamtx.yml dist/
+          cp LICENSE dist/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU (for riscv64 base image)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: riscv64
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Standard image (FROM scratch)
+      - name: Build and push standard image
+        uses: docker/build-push-action@v6
+        with:
+          context: dist
+          file: docker/riscv64.Dockerfile
+          platforms: linux/riscv64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      # FFmpeg image (FROM alpine + ffmpeg)
+      - name: Build and push ffmpeg image
+        uses: docker/build-push-action@v6
+        with:
+          context: dist
+          file: docker/riscv64-ffmpeg.Dockerfile
+          platforms: linux/riscv64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}-ffmpeg
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-ffmpeg
+
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediamtx-riscv64
+          path: |
+            dist/mediamtx
+            dist/mediamtx.yml
+            dist/LICENSE
