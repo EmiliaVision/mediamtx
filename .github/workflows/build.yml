@@ -18,7 +18,7 @@ permissions:
 env:
   GHCR_IMAGE: ghcr.io/emiliavision/mediamtx
   GCP_REGISTRY: us-east1-docker.pkg.dev
-  GCP_IMAGE: us-east1-docker.pkg.dev/emilia-vision-core/emilia-vision/echobase-matrix/mediamtx
+  GCP_IMAGE: us-east1-docker.pkg.dev/emilia-vision-core/emilia-vision/mediamtx
 
 jobs:
   build:
