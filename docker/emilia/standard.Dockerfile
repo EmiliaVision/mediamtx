@@ -1,0 +1,5 @@
+FROM scratch
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/mediamtx /
+COPY ${TARGETPLATFORM}/mediamtx.yml /
+ENTRYPOINT [ "/mediamtx" ]

@@ -1,4 +1,4 @@
-name: riscv64
+name: build
 
 on:
   push:
@@ -20,7 +20,7 @@ env:
   IMAGE_NAME: emiliavision/mediamtx
 
 jobs:
-  build-riscv64:
+  build:
     runs-on: ubuntu-24.04
 
     steps:
@@ -40,15 +40,13 @@ jobs:
       - name: Checkout target tag source
         if: ${{ github.event.inputs.tag != '' }}
         run: |
-          # Save our custom Dockerfiles before switching
-          cp docker/riscv64.Dockerfile /tmp/riscv64.Dockerfile
-          cp docker/riscv64-ffmpeg.Dockerfile /tmp/riscv64-ffmpeg.Dockerfile
+          # Save our custom files before switching
+          cp -r docker/emilia /tmp/emilia-dockerfiles
           # Checkout the target tag source code
           git checkout ${{ github.event.inputs.tag }}
           # Restore our Dockerfiles
-          mkdir -p docker
-          cp /tmp/riscv64.Dockerfile docker/riscv64.Dockerfile
-          cp /tmp/riscv64-ffmpeg.Dockerfile docker/riscv64-ffmpeg.Dockerfile
+          mkdir -p docker/emilia
+          cp -r /tmp/emilia-dockerfiles/* docker/emilia/
 
       - uses: actions/setup-go@v5
         with:
@@ -57,26 +55,33 @@ jobs:
       - name: Generate embedded assets
         run: go generate ./...
 
-      - name: Cross-compile for riscv64
+      - name: Cross-compile binaries
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -o mediamtx .
-          file mediamtx
-          ls -lh mediamtx
+          mkdir -p dist/linux/amd64 dist/linux/riscv64
 
-      - name: Prepare build context
-        run: |
-          mkdir -p dist
-          cp mediamtx dist/
-          cp mediamtx.yml dist/
-          cp LICENSE dist/
+          echo "=== Building linux/amd64 ==="
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/linux/amd64/mediamtx .
+          file dist/linux/amd64/mediamtx
+
+          echo "=== Building linux/riscv64 ==="
+          CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -o dist/linux/riscv64/mediamtx .
+          file dist/linux/riscv64/mediamtx
+
+          # Shared files in each arch dir (needed by Dockerfile COPY)
+          for arch in amd64 riscv64; do
+            cp mediamtx.yml dist/linux/$arch/
+            cp LICENSE dist/linux/$arch/
+          done
+
+          ls -lhR dist/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Set up QEMU (for riscv64 base image)
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: riscv64
+          platforms: linux/amd64,linux/riscv64
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -90,8 +95,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: dist
-          file: docker/riscv64.Dockerfile
-          platforms: linux/riscv64
+          file: docker/emilia/standard.Dockerfile
+          platforms: linux/amd64,linux/riscv64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
@@ -102,18 +107,15 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: dist
-          file: docker/riscv64-ffmpeg.Dockerfile
-          platforms: linux/riscv64
+          file: docker/emilia/ffmpeg.Dockerfile
+          platforms: linux/amd64,linux/riscv64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}-ffmpeg
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-ffmpeg
 
-      - name: Upload binary as artifact
+      - name: Upload binaries as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mediamtx-riscv64
-          path: |
-            dist/mediamtx
-            dist/mediamtx.yml
-            dist/LICENSE
+          name: mediamtx-binaries
+          path: dist/
