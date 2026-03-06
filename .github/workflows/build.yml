@@ -16,8 +16,9 @@ permissions:
   packages: write
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: emiliavision/mediamtx
+  GHCR_IMAGE: ghcr.io/emiliavision/mediamtx
+  GCP_REGISTRY: us-east1-docker.pkg.dev
+  GCP_IMAGE: us-east1-docker.pkg.dev/emilia-vision-core/emilia-vision/echobase-matrix/mediamtx
 
 jobs:
   build:
@@ -83,13 +84,26 @@ jobs:
         with:
           platforms: linux/amd64,linux/riscv64
 
+      # --- Registry logins ---
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Log in to GCP Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGISTRY }} --quiet
+
+      # --- Build and push ---
       # Standard image (FROM scratch)
       - name: Build and push standard image
         uses: docker/build-push-action@v6
@@ -99,8 +113,10 @@ jobs:
           platforms: linux/amd64,linux/riscv64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
+            ${{ env.GHCR_IMAGE }}:latest
+            ${{ env.GCP_IMAGE }}:${{ steps.version.outputs.tag }}
+            ${{ env.GCP_IMAGE }}:latest
 
       # FFmpeg image (FROM alpine + ffmpeg)
       - name: Build and push ffmpeg image
@@ -111,8 +127,10 @@ jobs:
           platforms: linux/amd64,linux/riscv64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}-ffmpeg
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-ffmpeg
+            ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}-ffmpeg
+            ${{ env.GHCR_IMAGE }}:latest-ffmpeg
+            ${{ env.GCP_IMAGE }}:${{ steps.version.outputs.tag }}-ffmpeg
+            ${{ env.GCP_IMAGE }}:latest-ffmpeg
 
       - name: Upload binaries as artifacts
         uses: actions/upload-artifact@v4
