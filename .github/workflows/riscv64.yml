@@ -37,6 +37,19 @@ jobs:
             echo "tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Checkout target tag source
+        if: ${{ github.event.inputs.tag != '' }}
+        run: |
+          # Save our custom Dockerfiles before switching
+          cp docker/riscv64.Dockerfile /tmp/riscv64.Dockerfile
+          cp docker/riscv64-ffmpeg.Dockerfile /tmp/riscv64-ffmpeg.Dockerfile
+          # Checkout the target tag source code
+          git checkout ${{ github.event.inputs.tag }}
+          # Restore our Dockerfiles
+          mkdir -p docker
+          cp /tmp/riscv64.Dockerfile docker/riscv64.Dockerfile
+          cp /tmp/riscv64-ffmpeg.Dockerfile docker/riscv64-ffmpeg.Dockerfile
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
